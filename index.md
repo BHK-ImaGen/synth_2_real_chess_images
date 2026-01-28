@@ -1,3 +1,7 @@
+---
+layout: default
+title: Chess Image Generation
+---
 
 <h1 style="text-align:center"><strong>Chess Image Generation: Synthetic to Real</strong></h1>
 
@@ -79,4 +83,5 @@ Our data collection pipeline emphasizes scalability, automation, and visual real
 [1]: https://openaccess.thecvf.com/content_cvpr_2017/papers/Isola_Image-To-Image_Translation_With_CVPR_2017_paper.pdf
 [2]: https://github.com/notnil/fenify-3D
 [3]: https://python-chess.readthedocs.io/en/latest/
+
 [4]: https://github.com/google-ai-edge/mediapipe/blob/master/docs/solutions/hands.md
