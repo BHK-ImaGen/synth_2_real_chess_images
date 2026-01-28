@@ -1,26 +1,22 @@
-# Site settings
 title: Chess Image Generation
 description: "Synthetic-to-real image translation for chessboard images"
-url: "https://github.com/BHK-ImaGen"   # Replace with your GitHub username URL
+url: "https://github.com/BHK-ImaGen" 
 baseurl: ""                        
 
-# Theme
 theme: minima
 
-# Author
 author:
   name: Yoav Baider Klein, Maor Haak, Guy Kouchly
   email: yoavbaider@gmail.com, Maorhaak2@gmail.com, guykuh@gmail.com
 
-# Social links
 social:
   github: Yoav-Baider-Klein, Maorhaak2, Guy Kouchly
 
-# Build settings
 markdown: kramdown
 
 plugins:
-  - jekyll-feed      # Generates RSS feed
+  - jekyll-feed 
 
 minima:
+
   skin: classic
