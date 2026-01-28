@@ -1,132 +1,82 @@
----
-layout: default
-title: Chess Image Generation
----
-# Chess Image Generation: Synthetic to Real
 
-Welcome to our project! This page showcases our work on generating realistic chess images from synthetic data.
+<h1 style="text-align:center"><strong>Chess Image Generation: Synthetic to Real</strong></h1>
 
-## Team Members
-
-- **Alice Smith** – Backend Developer
-- **Bob Johnson** – Frontend Developer
-- **Carol Lee** – DevOps
-
-## Project Overview
-![Far from accurate chessboard](assets/PHOTO-2025-10-18-11-07-46_20.jpg)
-![Frie](assets/פרייפלד.jpg)
-Describe your project goals, workflow, or include images of your results here.
+<p style="text-align:center">
+ 
+  <strong>
+    <a href="https://www.linkedin.com/in/yoav-baider/">Yoav Baider Klein</a> · 
+    <a href="https://www.linkedin.com/in/maor-haak/">Maor Haak</a> · 
+    <a href="https://www.linkedin.com/in/guy-kouchly/">Guy Kouchly</a>
+  </strong>
+</p>
 
 
----
-layout: default
-title: Chess Image Generation
----
-# Chess Image Generation: Synthetic to Real
 
-Welcome to our project! This site documents our work on generating realistic chess images from synthetic data.
+<div style="text-align:center;">
+  <a class="button" href="/assets/Final Report.pdf" style="margin-right:4px;">
+    <img src="{{ '/assets/paper_icon.png' | relative_url }}" alt="Paper" style="height: 60px; vertical-align: middle;">
+  </a>
+  <a class="button" href="https://github.com/BHK-ImaGen" style="margin-right:4px;">
+    <img src="{{ '/assets/github_icon.png' | relative_url }}" alt="Code" style="height: 60px; vertical-align: middle;">
+  </a>
+</div>
 
----
+<br>
 
-## 1. Abstract
 
-Concise summary of the project:
+![Image]({{ '/assets/teaser_image.jpg' | relative_url }})
 
-- **Problem:** Bridging the gap between synthetic and real chess images.  
-- **Approach:** Using AI-based image generation and domain adaptation techniques.  
-- **Main Results:** Realistic chess images closely resembling real photographs, validated by quantitative and qualitative evaluation.
 
----
 
-## 2. Introduction
 
-- **Task and Motivation:** Generate realistic chess images for training and research purposes.  
-- **Challenges and Goals:** Visual fidelity, variety of chessboards and pieces, domain gap between synthetic and real data.  
-- **Main Contributions:**  
-  1. Novel pipeline for converting synthetic chess images to realistic style.  
-  2. Quantitative and qualitative evaluation of realism.  
-  3. Open-source dataset and code.
+## **Abstract**
+
+
+This project addresses the problem of synthetic to real image translation for chessboard rendering, with the goal of transforming synthetic chessboard images into matching
+realistic looking photographs. We propose a (cGAN) that performs supervised image to
+image translation from the synthetic renders to the real image domain. Results show that
+the proposed method successfully transforms the synthetic inputs to realistic looking
+images while maintaining accurate geometric consistency.
 
 ---
 
-## 3. Related Work
+## **How It Works**
 
-- **Academic Papers:**  
-  - Paper 1: Title, Year, Summary  
-  - Paper 2: Title, Year, Summary  
-- **Repositories:**  
-  - [GitHub Repo 1](https://github.com/...) – Related implementation  
-- **Datasets:**  
-  - Chess image datasets used for training  
-- **Differences from prior work:** Clarify what your project adds beyond existing methods.
+Our model is a supervised conditional GAN based on the pix2pix framework that translates synthetic chessboard renderings into realistic chessboard images. A U-Net–based generator with skip connections maps 512×512 RGB synthetic inputs to RGB outputs using strided convolutions, mirrored upsampling, and a tanh activation, while adversarial learning is provided by a PatchGAN discriminator operating on paired input–output images. Training is fully supervised using paired synthetic–real data, with joint optimization of the generator and discriminator using adversarial, reconstruction, and perceptual losses, stabilized through asymmetric learning rates and an R1 gradient penalty. The model operates purely on image data, with normalization to [−1, 1], and is evaluated qualitatively through periodic checkpointing and visual inspection.
 
----
+<div style="text-align:center">
 
-## 4. Method
+  <img src="/assets/U-Net.png" alt="Image 1" width="45%" style="margin: 0 0px;">
+  <img src="/assets/PatchGAN.png" alt="Image 2" width="45%" style="margin: 0 0px;">
 
-- **Model Architecture:** Description and diagrams.  
-- **Input/Output Representation:** How chess images are represented for the model.  
-- **Training Procedure:** Steps, epochs, optimizer details.  
-- **Loss Functions:** e.g., adversarial loss, L1/L2 loss.  
-- **Preprocessing/Postprocessing:** Normalization, resizing, image enhancement.  
-- **Diagrams:** Include visual representations of your pipeline if possible:
+</div>
+<br>
 
-![Model Pipeline](assets/pipeline_diagram.png)
 
 ---
 
-## 5. Experiments
+## **Data Collection Methods**
 
-- **Dataset Description:** Size, source, train/validation/test splits.  
-- **Evaluation Metrics:** e.g., FID, PSNR, accuracy.  
-- **Baselines and Comparisons:** Compare your method against previous methods.  
-- **Quantitative Results:** Tables, numbers:
+Our data collection pipeline emphasizes scalability, automation, and visual realism. In addition to real chessboard images labeled with FEN, we expand the dataset using PGN game data through an automatic labeling and alignment process built on the [Fenify 3D](https://github.com/notnil/fenify-3D) framework, which matches video frames to reconstructed game states while accounting for board symmetries and temporal consistency. Dataset quality is improved by filtering frames with hand occlusions using [MediaPipe](https://github.com/google-ai-edge/mediapipe), and diversity is increased through board-level recomposition that generates new realistic boards from real square tiles. All synthetic and real images are preprocessed into a unified 512×512 RGB format with normalization, ensuring consistent inputs for training and evaluation.
 
-| Method | Metric1 | Metric2 |
-|--------|--------|--------|
-| Ours   | 0.92   | 45.1   |
-| Baseline | 0.85 | 38.7   |
+<div style="text-align:center">
 
-- **Qualitative Results:** Visualizations of generated images:
+  <img src="/assets/Image2FEN.png" alt="Image to FEN" width="90%" style="margin: 0 0px;">
 
-![Chess Sample](assets/chess_sample.png)
+</div>
+<br>
 
 ---
 
-## 6. Ablation Study
+## **References**
 
-Demonstrate the importance of each component:
+\[1\] Isola et al., ["Image-to-Image Translation with Conditional Adversarial Networks"][1], CVPR 2017. <br>
+\[2\] [Fenify repository / tool][2]. <br>
+\[3\] [python-chess: a chess library for Python][3] <br>
+\[4\] [Google MediaPipe Hands repository][4].
 
-- **Remove Component Y:** Effect on results.  
-- **Remove Component Z:** Effect on results.  
 
-| Variant | Metric1 | Metric2 |
-|---------|---------|---------|
-| Full model | 0.92 | 45.1 |
-| Without Y  | 0.88 | 42.0 |
-| Without Z  | 0.87 | 41.5 |
-
-- Clear explanations of why each component is necessary.
-
----
-
-## 7. What Did Not Work (Optional)
-
-- Ideas/approaches that failed or underperformed.  
-- Lessons learned from unsuccessful attempts.
-
----
-
-## 8. Discussion / Limitations (Optional)
-
-- Failure cases and limitations of the method.  
-- Possible future improvements or extensions.
-
----
-
-## 9. References
-
-- Paper 1: Author, Title, Year, URL  
-- Paper 2: Author, Title, Year, URL  
-- Dataset websites and GitHub repositories used
-
+[1]: https://openaccess.thecvf.com/content_cvpr_2017/papers/Isola_Image-To-Image_Translation_With_CVPR_2017_paper.pdf
+[2]: https://github.com/notnil/fenify-3D
+[3]: https://python-chess.readthedocs.io/en/latest/
+[4]: https://github.com/google-ai-edge/mediapipe/blob/master/docs/solutions/hands.md
