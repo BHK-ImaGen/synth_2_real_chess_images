@@ -1,9 +1,9 @@
 title: Chess Image Generation
 description: "Synthetic-to-real image translation for chessboard images"
-url: "https://BHK-ImaGen.github.io"
-baseurl: "/BHK-ImaGen"                      
+url: "https://bhk-imagen.github.io"
+baseurl: "/BHK-ImaGen" 
 
-theme: minima
+remote_theme: jekyll/minima
 
 author:
   name: Yoav Baider Klein, Maor Haak, Guy Kouchly
@@ -15,9 +15,11 @@ social:
 markdown: kramdown
 
 plugins:
-  - jekyll-feed 
+  - jekyll-feed
+  - jekyll-seo-tag
 
 minima:
 
   skin: classic
+
 
