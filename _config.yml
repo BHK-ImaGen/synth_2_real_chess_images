@@ -1,7 +1,7 @@
 title: Chess Image Generation
 description: "Synthetic-to-real image translation for chessboard images"
 url: "https://bhk-imagen.github.io"
-baseurl: "/BHK-ImaGen" 
+baseurl: "/synth_2_real_chess_images"
 
 remote_theme: jekyll/minima
 
@@ -19,7 +19,4 @@ plugins:
   - jekyll-seo-tag
 
 minima:
-
   skin: classic
-
-
