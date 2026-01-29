@@ -17,7 +17,7 @@ title: Chess Image Generation
 
 
 <div style="text-align:center;">
-  <a class="button" href="/assets/Final Report.pdf" style="margin-right:4px;">
+  <a class="button" href="{{ '/assets/Final Report.pdf' | relative_url }}" style="margin-right:4px;">
     <img src="{{ '/assets/paper_icon.png' | relative_url }}" alt="Paper" style="height: 60px; vertical-align: middle;">
   </a>
   <a class="button" href="https://github.com/BHK-ImaGen" style="margin-right:4px;">
@@ -50,8 +50,9 @@ Our model is a supervised conditional GAN based on the pix2pix framework that tr
 
 <div style="text-align:center">
 
-  <img src="/assets/U-Net.png" alt="Image 1" width="45%" style="margin: 0 0px;">
-  <img src="/assets/PatchGAN.png" alt="Image 2" width="45%" style="margin: 0 0px;">
+  <img src="{{ '/assets/U-Net.png' | relative_url }}" alt="Image 1" width="45%" style="margin: 0 0px;">
+  <img src="{{ '/assets/PatchGAN.png' | relative_url }}" alt="Image 2" width="45%" style="margin: 0 0px;">
+
 
 </div>
 <br>
@@ -65,7 +66,7 @@ Our data collection pipeline emphasizes scalability, automation, and visual real
 
 <div style="text-align:center">
 
-  <img src="/assets/Image2FEN.png" alt="Image to FEN" width="90%" style="margin: 0 0px;">
+  <img src="{{ '/assets/Image2FEN.png' | relative_url }}" alt="Image to FEN" width="90%" style="margin: 0 0px;">
 
 </div>
 <br>
@@ -85,3 +86,4 @@ Our data collection pipeline emphasizes scalability, automation, and visual real
 [3]: https://python-chess.readthedocs.io/en/latest/
 
 [4]: https://github.com/google-ai-edge/mediapipe/blob/master/docs/solutions/hands.md
+
