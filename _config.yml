@@ -3,7 +3,7 @@ description: "Synthetic-to-real image translation for chessboard images"
 url: "https://bhk-imagen.github.io"
 baseurl: "/synth_2_real_chess_images"
 
-remote_theme: jekyll/minima
+remote_theme: jekyll/minima@v2.5.1
 
 author:
   name: Yoav Baider Klein, Maor Haak, Guy Kouchly
@@ -20,3 +20,4 @@ plugins:
 
 minima:
   skin: classic
+
