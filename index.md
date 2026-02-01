@@ -17,7 +17,7 @@ title: Chess Image Generation
 
 
 <div style="text-align:center;">
-  <a class="button" href="{{ '/assets/Final Report.pdf' | relative_url }}" style="margin-right:4px;">
+  <a class="button" href="{{ '/assets/Final_Report.pdf' | relative_url }}" style="margin-right:4px;">
     <img src="{{ '/assets/paper_icon.png' | relative_url }}" alt="Paper" style="height: 60px; vertical-align: middle;">
   </a>
   <a class="button" href="https://github.com/BHK-ImaGen" style="margin-right:4px;">
@@ -86,4 +86,5 @@ Our data collection pipeline emphasizes scalability, automation, and visual real
 [3]: https://python-chess.readthedocs.io/en/latest/
 
 [4]: https://github.com/google-ai-edge/mediapipe/blob/master/docs/solutions/hands.md
+
 
