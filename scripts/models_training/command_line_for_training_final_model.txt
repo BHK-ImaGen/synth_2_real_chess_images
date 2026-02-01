@@ -1,0 +1,20 @@
+python synth_to_real_chess4_dataset_root_interactive.py \
+  --dataset_root /home/guykou/chess/dataset_root \
+  --out_root /home/guykou/chess/final_models \
+  --run_id 10 \
+  --tag 10_BCE_adv_weakerD \
+  --image_size 512 \
+  --batch_size 8 \
+  --epochs 200 \
+  --save_every 10 \
+  --lr_g 2e-4 \
+  --lr_d 1e-4 \
+  --adv_loss bce \
+  --l1_lambda 100 \
+  --vgg_lambda 10 \
+  --r1_gamma 10 \
+  --disc_base_channels 32 \
+  --disc_layers 4 \
+  --syn_norm tanh \
+  --real_norm tanh \
+  --seed 0

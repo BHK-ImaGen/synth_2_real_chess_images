@@ -1,0 +1,465 @@
+#!/usr/bin/env python3
+"""
+Tag chess video frames with (PGN-derived) FEN using fenify-3D logits + monotonic DP alignment.
+
+What it does
+------------
+1) Reads a PGN game -> builds an ordered list of positions (one per ply, including start position).
+2) Runs fenify-3D TorchScript model on each frame -> per-square logits (64 x 13).
+3) For each frame, scores every PGN position using negative log-likelihood (softmax logits).
+   - Also tries 8 board symmetries (4 rotations x optional left-right flip) and takes the best.
+4) Finds the best monotonic alignment path (frames are ordered; PGN ply index never decreases).
+5) Outputs CSV: frame_path, ply_index, fen (full PGN FEN), board_fen (piece placement only).
+
+Requirements
+------------
+pip install python-chess torch torchvision pillow numpy
+
+Usage
+-----
+python tag_frames_with_fen.py \
+  --pgn game.pgn \
+  --frames_dir /path/to/frames \
+  --model /path/to/model.pt \
+  --out tagged.csv \
+  --device cuda \
+  --batch 32
+
+Notes
+-----
+- We match ONLY what the vision model can predict: piece placement on 64 squares.
+  The output FEN for a frame is taken from the PGN position at the aligned ply index.
+- If your video has cuts / skips, increase --max_jump (but keep reasonable like 6-12).
+"""
+
+from __future__ import annotations
+
+import argparse
+import math
+import os
+import re
+from dataclasses import dataclass
+from pathlib import Path
+from typing import List, Tuple, Optional
+
+import numpy as np
+import chess
+import chess.pgn
+import torch
+import torchvision.transforms as T
+from PIL import Image
+
+
+# -------------------------
+# Utilities: PGN -> positions
+# -------------------------
+
+@dataclass
+class PGNPositions:
+    boards: List[chess.Board]       # length N
+    fens: List[str]                 # full FEN per ply (includes side-to-move etc.)
+    board_fens: List[str]           # piece placement only: board.board_fen()
+
+
+def load_pgn_positions(pgn_path: str, game_index: int = 0, max_plies: Optional[int] = None) -> PGNPositions:
+    """Load a PGN file, select game_index, return list of boards per ply (including start position)."""
+    pgn_path = str(pgn_path)
+    with open(pgn_path, "r", encoding="utf-8", errors="ignore") as f:
+        game = None
+        for i in range(game_index + 1):
+            game = chess.pgn.read_game(f)
+            if game is None:
+                raise ValueError(f"PGN ended before game_index={game_index} could be read.")
+    assert game is not None
+
+    boards: List[chess.Board] = []
+    fens: List[str] = []
+    board_fens: List[str] = []
+
+    board = game.board()  # start position
+    boards.append(board.copy(stack=False))
+    fens.append(board.fen())
+    board_fens.append(board.board_fen())
+
+    ply = 0
+    for move in game.mainline_moves():
+        board.push(move)
+        ply += 1
+        boards.append(board.copy(stack=False))
+        fens.append(board.fen())
+        board_fens.append(board.board_fen())
+        if max_plies is not None and ply >= max_plies:
+            break
+
+    return PGNPositions(boards=boards, fens=fens, board_fens=board_fens)
+
+
+# -------------------------
+# Frame sorting
+# -------------------------
+
+_FRAME_NUM_RE = re.compile(r"(\d+)")
+
+
+def frame_sort_key(p: Path) -> Tuple[int, str]:
+    """
+    Sort frames by the last integer in filename (common for frame_000123.jpg),
+    fallback to name lexicographically.
+    """
+    name = p.name
+    nums = _FRAME_NUM_RE.findall(name)
+    if nums:
+        return (int(nums[-1]), name)
+    return (10**18, name)
+
+
+def list_frames(frames_dir: str, exts=(".jpg", ".jpeg", ".png", ".webp")) -> List[Path]:
+    frames_dir = Path(frames_dir)
+    paths = [p for p in frames_dir.iterdir() if p.is_file() and p.suffix.lower() in exts]
+    paths.sort(key=frame_sort_key)
+    return paths
+
+
+# -------------------------
+# fenify-3D style predictor (logits)
+# -------------------------
+
+class FenifyPredictor:
+    """
+    Loads a TorchScript model that outputs per-square logits (64, 13) for each image.
+    Uses the same preprocessing as fenify-3D.
+    """
+
+    def __init__(self, model_file_path: str, device: str = "cuda"):
+        self.device = torch.device(device if (device == "cpu" or torch.cuda.is_available()) else "cpu")
+        self.model = torch.jit.load(model_file_path, map_location=self.device).eval()
+        self.img_transform = T.Compose(
+            [
+                T.Resize((400, 400)),
+                T.Lambda(lambda img: img.convert("RGB")),
+                T.ToTensor(),
+                T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ]
+        )
+
+    @torch.no_grad()
+    def batch_logits(self, image_paths: List[Path]) -> torch.Tensor:
+        """
+        Returns logits tensor of shape (B, 64, 13).
+        """
+        xs = []
+        for p in image_paths:
+            img = Image.open(p)
+            x = self.img_transform(img)
+            xs.append(x)
+        xb = torch.stack(xs, dim=0).to(self.device)  # (B,3,400,400)
+        y = self.model(xb)
+
+        # Be tolerant to slightly different exported shapes:
+        # Expect either (B,64,13) or (B,64,13,?) etc.
+        if y.dim() == 4 and y.shape[-1] == 1:
+            y = y.squeeze(-1)
+        if y.dim() != 3 or y.shape[1] != 64 or y.shape[2] != 13:
+            raise RuntimeError(f"Unexpected model output shape: {tuple(y.shape)} (expected (B,64,13))")
+
+        return y
+
+
+# -------------------------
+# Piece index mapping (python-chess -> [0..12])
+# 0=empty, 1..6 white P..K, 7..12 black P..K
+# -------------------------
+
+def piece_to_index(piece: Optional[chess.Piece]) -> int:
+    if piece is None:
+        return 0
+    base = piece.piece_type  # 1..6
+    if piece.color == chess.WHITE:
+        return base
+    return base + 6
+
+
+def board_to_piece_index_vector(board: chess.Board) -> np.ndarray:
+    """
+    Returns int array shape (64,) with the desired class index for each square (python-chess square 0..63).
+    """
+    v = np.zeros((64,), dtype=np.int64)
+    pm = board.piece_map()
+    for sq in range(64):
+        v[sq] = piece_to_index(pm.get(sq))
+    return v
+
+
+# -------------------------
+# Square symmetries
+# We allow: rotations 0/90/180/270 AND optional left-right flip.
+# We'll apply symmetries to the MODEL OUTPUT (logits per square),
+# so we need a permutation perm where:
+#   new_logits[new_sq] = old_logits[perm[new_sq]]
+# -------------------------
+
+def sq_to_rf(sq: int) -> Tuple[int, int]:
+    # python-chess: square = file + 8*rank, file in [0..7], rank in [0..7]
+    file = sq % 8
+    rank = sq // 8
+    return rank, file
+
+
+def rf_to_sq(rank: int, file: int) -> int:
+    return rank * 8 + file
+
+
+def apply_rot(rank: int, file: int, k: int) -> Tuple[int, int]:
+    """
+    Rotate (rank,file) by 90 degrees k times clockwise, around board center.
+    rank,file are 0..7.
+    """
+    r, f = rank, file
+    for _ in range(k % 4):
+        # clockwise: (r,f) -> (f, 7-r)
+        r, f = f, 7 - r
+    return r, f
+
+
+def apply_flip_lr(rank: int, file: int) -> Tuple[int, int]:
+    # left-right flip (mirror along vertical axis): file -> 7-file
+    return rank, 7 - file
+
+
+def build_permutation(rot_k: int, flip_lr: bool) -> np.ndarray:
+    """
+    Build perm[newsq] = oldsq such that applying symmetry to logits is:
+      logits_sym[newsq] = logits[perm[newsq]]
+    """
+    perm = np.zeros((64,), dtype=np.int64)
+    for old_sq in range(64):
+        r, f = sq_to_rf(old_sq)
+        if flip_lr:
+            r, f = apply_flip_lr(r, f)
+        r, f = apply_rot(r, f, rot_k)
+        new_sq = rf_to_sq(r, f)
+        # We want mapping from new_sq -> old_sq, so:
+        perm[new_sq] = old_sq
+    return perm
+
+
+def all_symmetry_perms() -> List[np.ndarray]:
+    perms = []
+    for flip in [False, True]:
+        for k in [0, 1, 2, 3]:
+            perms.append(build_permutation(rot_k=k, flip_lr=flip))
+    return perms  # length 8
+
+
+# -------------------------
+# Matching cost (NLL)
+# -------------------------
+
+def compute_costs_for_frame(
+    logits_64x13: torch.Tensor,
+    idx_matrix_t_64xN: torch.Tensor,
+    perms: List[np.ndarray],
+) -> torch.Tensor:
+    """
+    logits_64x13: (64,13) on device
+    idx_matrix_t_64xN: (64,N) long on device; each column corresponds to a PGN position
+    perms: list of length 8, each is np.ndarray shape (64,) mapping new_sq -> old_sq
+
+    Returns: costs (N,) on device: min over symmetries of -sum logp[sq, idx]
+    """
+    # log-softmax over piece classes
+    logp = torch.log_softmax(logits_64x13, dim=1)  # (64,13)
+
+    costs_best = None
+    for perm in perms:
+        perm_t = torch.as_tensor(perm, device=logp.device, dtype=torch.long)  # (64,)
+        logp_sym = logp.index_select(0, perm_t)  # (64,13) with squares permuted
+        gathered = logp_sym.gather(1, idx_matrix_t_64xN)  # (64,N)
+        cost = -gathered.sum(dim=0)  # (N,)
+        if costs_best is None:
+            costs_best = cost
+        else:
+            costs_best = torch.minimum(costs_best, cost)
+
+    assert costs_best is not None
+    return costs_best
+
+
+# -------------------------
+# Monotonic alignment (DP)
+# -------------------------
+
+@dataclass
+class AlignConfig:
+    max_jump: int = 3          # allow i -> i+k for k in [0..max_jump]
+    jump_penalty: float = 3.0  # penalty per advanced ply (encourages staying on same position)
+    skip_extra_penalty: float = 2.0  # extra penalty for k>=2 (cuts/missed frames)
+    init_max_ply: int = 12     # allow starting at ply in [0..init_max_ply] (in case first frame isn't start)
+    init_ply_penalty: float = 4.0    # per ply penalty at initialization
+
+
+def align_frames_to_pgn(
+    frame_costs: np.ndarray,  # shape (T,N)
+    cfg: AlignConfig,
+) -> Tuple[np.ndarray, float]:
+    """
+    DP for monotonic alignment:
+      dp[t,i] = cost(frame t assigned to ply i) + min over k in [0..max_jump] of dp[t-1, i-k] + trans_penalty(k)
+    Returns:
+      path: (T,) ply indices
+      total_cost: float
+    """
+    T, N = frame_costs.shape
+    INF = 1e30
+
+    # dp arrays
+    dp_prev = np.full((N,), INF, dtype=np.float64)
+    dp_cur = np.full((N,), INF, dtype=np.float64)
+
+    backptr = np.full((T, N), -1, dtype=np.int16)
+
+    # init: allow starting at ply 0..init_max_ply
+    init_max = min(cfg.init_max_ply, N - 1)
+    for i in range(init_max + 1):
+        dp_prev[i] = frame_costs[0, i] + cfg.init_ply_penalty * i
+        backptr[0, i] = -1
+
+    def trans_penalty(k: int) -> float:
+        if k == 0:
+            return 0.0
+        if k == 1:
+            return cfg.jump_penalty
+        return cfg.jump_penalty * k + cfg.skip_extra_penalty * (k - 1)
+
+    # main DP
+    for t in range(1, T):
+        dp_cur.fill(INF)
+        for i in range(N):
+            best_val = INF
+            best_prev = -1
+            # stay or jump forward
+            for k in range(0, cfg.max_jump + 1):
+                prev_i = i - k
+                if prev_i < 0:
+                    break
+                cand = dp_prev[prev_i] + trans_penalty(k)
+                if cand < best_val:
+                    best_val = cand
+                    best_prev = prev_i
+            if best_prev != -1:
+                dp_cur[i] = frame_costs[t, i] + best_val
+                backptr[t, i] = best_prev
+        dp_prev, dp_cur = dp_cur, dp_prev
+
+    end_i = int(np.argmin(dp_prev))
+    total_cost = float(dp_prev[end_i])
+
+    # traceback
+    path = np.zeros((T,), dtype=np.int32)
+    path[T - 1] = end_i
+    for t in range(T - 1, 0, -1):
+        path[t - 1] = int(backptr[t, path[t]])
+        if path[t - 1] < 0:
+            path[t - 1] = 0
+
+    return path, total_cost
+
+
+# -------------------------
+# Main pipeline
+# -------------------------
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--pgn", required=True, help="Path to PGN file")
+    ap.add_argument("--game_index", type=int, default=0, help="Which game in PGN (0-based)")
+    ap.add_argument("--frames_dir", required=True, help="Directory containing frame images")
+    ap.add_argument("--model", required=True, help="Path to fenify-3D TorchScript model .pt")
+    ap.add_argument("--out", required=True, help="Output CSV path")
+    ap.add_argument("--device", default="cuda", choices=["cuda", "cpu"], help="Run model on cuda/cpu")
+    ap.add_argument("--batch", type=int, default=16, help="Batch size for inference")
+    ap.add_argument("--max_jump", type=int, default=3, help="Max ply advance per frame in DP")
+    ap.add_argument("--jump_penalty", type=float, default=3.0, help="Penalty for advancing plies (k>=1)")
+    ap.add_argument("--skip_extra_penalty", type=float, default=2.0, help="Extra penalty for k>=2 jumps")
+    ap.add_argument("--init_max_ply", type=int, default=12, help="Allow starting ply in [0..this]")
+    ap.add_argument("--init_ply_penalty", type=float, default=4.0, help="Initialization penalty per starting ply")
+    ap.add_argument("--max_plies", type=int, default=None, help="Optional cap on number of plies read from PGN")
+    args = ap.parse_args()
+
+    # Load PGN positions
+    pgn_pos = load_pgn_positions(args.pgn, game_index=args.game_index, max_plies=args.max_plies)
+    N = len(pgn_pos.boards)
+    print(f"[INFO] Loaded PGN positions: N={N} (including start position)")
+
+    # List frames
+    frames = list_frames(args.frames_dir)
+    if not frames:
+        raise ValueError(f"No frames found in {args.frames_dir}")
+    Tn = len(frames)
+    print(f"[INFO] Found frames: T={Tn}")
+
+    # Precompute PGN piece-index matrix (N,64) and transpose to (64,N) for gather
+    idx_matrix = np.stack([board_to_piece_index_vector(b) for b in pgn_pos.boards], axis=0)  # (N,64)
+    # Transpose now to (64,N)
+    idx_matrix_t = torch.as_tensor(idx_matrix.T, dtype=torch.long)  # on CPU for now
+
+    # Symmetry permutations
+    perms = all_symmetry_perms()
+
+    # Predictor
+    predictor = FenifyPredictor(args.model, device=args.device)
+    device = predictor.device
+
+    # Move idx matrix to device once
+    idx_matrix_t_dev = idx_matrix_t.to(device)
+
+    # Compute frame costs: shape (T,N) float32
+    frame_costs = np.zeros((Tn, N), dtype=np.float32)
+
+    # Batched inference
+    bs = max(1, int(args.batch))
+    with torch.no_grad():
+        for start in range(0, Tn, bs):
+            batch_paths = frames[start:start + bs]
+            logits_b = predictor.batch_logits(batch_paths)  # (B,64,13) on device
+            B = logits_b.shape[0]
+            for bi in range(B):
+                costs = compute_costs_for_frame(
+                    logits_64x13=logits_b[bi],
+                    idx_matrix_t_64xN=idx_matrix_t_dev,
+                    perms=perms,
+                )  # (N,) on device
+                frame_costs[start + bi, :] = costs.detach().cpu().float().numpy()
+
+            if (start // bs) % 10 == 0:
+                print(f"[INFO] Inference progress: {min(start+bs, Tn)}/{Tn}")
+
+    # Align with DP
+    cfg = AlignConfig(
+        max_jump=args.max_jump,
+        jump_penalty=args.jump_penalty,
+        skip_extra_penalty=args.skip_extra_penalty,
+        init_max_ply=args.init_max_ply,
+        init_ply_penalty=args.init_ply_penalty,
+    )
+    path, total_cost = align_frames_to_pgn(frame_costs, cfg)
+    print(f"[INFO] Alignment done. total_cost={total_cost:.2f}")
+    print(f"[INFO] Aligned ply range: {path.min()} .. {path.max()}")
+
+    # Write CSV
+    out_path = Path(args.out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    import csv
+    with open(out_path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["frame_path", "ply_index", "fen", "board_fen"])
+        for t, frame_p in enumerate(frames):
+            i = int(path[t])
+            w.writerow([str(frame_p), i, pgn_pos.fens[i], pgn_pos.board_fens[i]])
+
+    print(f"[INFO] Wrote: {out_path}")
+
+
+if __name__ == "__main__":
+    main()
