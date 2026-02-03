@@ -1,3 +1,9 @@
+> ### ⚠️ **Git Large File Storage (LFS) required**
+>
+> This repository uses **Git LFS** to store large files (e.g., datasets / assets).  
+> Make sure Git LFS is installed **before cloning**, otherwise files may be missing or replaced with pointer files.
+
+
 # Synth2Real Chess Images  
 **Synthetic-to-Real Chessboard Image Translation using Conditional GANs**
 
