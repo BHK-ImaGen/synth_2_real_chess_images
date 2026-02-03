@@ -77,7 +77,7 @@ pip install -r requirements.txt
 
 ### 4. Combining Dataset Parts
 
-The dataset is split into multiple ZIP files (e.g., `dataset_root_part1.zip`, `dataset_root_part2.zip`, `dataset_root_part3.zip`). Combine them into a single `dataset_root/` folder before use:
+The dataset is split into multiple ZIP files (`dataset_root.zip.part_aa`, `dataset_root.zip.part_ab`, `dataset_root.zip.part_ac`). Combine them into a single `dataset_root/` folder before use:
 
 1. **Create dataset folder**
 ```bash
@@ -86,9 +86,9 @@ mkdir dataset_root
 
 2. **Extract all parts**
 ```bash
-unzip dataset_root_part1.zip -d dataset_root
-unzip dataset_root_part2.zip -d dataset_root
-unzip dataset_root_part3.zip -d dataset_root
+unzip dataset_root.zip.part_aa -d dataset_root
+unzip dataset_root.zip.part_ab -d dataset_root
+unzip dataset_root.zip.part_ac -d dataset_root
 ```
 3. **Verify structure**
 ```
