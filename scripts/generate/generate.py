@@ -1,6 +1,8 @@
 import os
 import json
+import argparse
 import subprocess
+
 import cv2
 import numpy as np
 import torch
@@ -8,38 +10,10 @@ import torchvision.transforms as T
 
 from generator import UNetGenerator
 
-import argparse
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--blender_path", type=str, default="blender")
-parser.add_argument("--blend_file", type=str, default=os.path.join(BASE_DIR, "chess-set.blend"))
-parser.add_argument("--generator_weights", type=str, default=os.path.join(BASE_DIR, "..", "models_training", "checkpoints", "gen_epoch_150.pth"))
-args = parser.parse_args()
 
-# =========================
-# CONFIG
-# =========================
-BLENDER_PATH = args.blender_path
-BLEND_FILE = args.blend_file
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-RENDERS_DIR = os.path.join(BASE_DIR, "renders")
-RESULTS_DIR = os.path.join(BASE_DIR, "results")
-os.makedirs(RENDERS_DIR, exist_ok=True)
-os.makedirs(RESULTS_DIR, exist_ok=True)
-
-BLENDER_SCRIPT = os.path.join(BASE_DIR, "chess_position_api_v2_sharp.py")
-
-GENERATOR_WEIGHTS = args.generator_weights
-SYNTHETIC_RAW = os.path.join(RENDERS_DIR, "synthetic_raw.png")
-
-NORM_STATS_JSON = os.path.splitext(GENERATOR_WEIGHTS)[0] + ".norm.json"
-
-# =========================
-# Board preprocessing (MATCH TRAINING)
-# =========================
 def preprocess_chess_board_training_style(img_bgr, output_size=512):
     if img_bgr is None:
         return None
@@ -79,12 +53,7 @@ def preprocess_chess_board_training_style(img_bgr, output_size=512):
     rect_ordered[3] = pts[np.argmax(diff)]
 
     dst = np.array(
-        [
-            [0, 0],
-            [output_size - 1, 0],
-            [output_size - 1, output_size - 1],
-            [0, output_size - 1],
-        ],
+        [[0, 0], [output_size - 1, 0], [output_size - 1, output_size - 1], [0, output_size - 1]],
         dtype="float32",
     )
 
@@ -92,34 +61,33 @@ def preprocess_chess_board_training_style(img_bgr, output_size=512):
     warped = cv2.warpPerspective(img_rgb, M, (output_size, output_size))
     return warped
 
-# =========================
-# Normalization helpers (MATCH TRAINING)
-# =========================
-def load_norm_stats():
-    if os.path.exists(NORM_STATS_JSON):
-        with open(NORM_STATS_JSON, "r") as f:
+
+def load_norm_stats(norm_json_path):
+    if norm_json_path and os.path.exists(norm_json_path):
+        with open(norm_json_path, "r") as f:
             data = json.load(f)
         mean = data.get("mean", None)
         std = data.get("std", None)
         if mean is not None and std is not None and len(mean) == 3 and len(std) == 3:
-            print(f"[Norm] Loaded mean/std from: {NORM_STATS_JSON}")
+            print(f"[Norm] Loaded mean/std from: {norm_json_path}")
             return mean, std
 
     print("[Norm] No norm stats JSON found; proceeding WITHOUT mean/std normalization.")
-    print(f"       (Expected at: {NORM_STATS_JSON})")
+    if norm_json_path:
+        print(f"       (Expected at: {norm_json_path})")
     return None, None
+
 
 def img_rgb_to_model_input(img_rgb_uint8, device, mean=None, std=None):
     x = torch.from_numpy(img_rgb_uint8).float() / 255.0
     x = x.permute(2, 0, 1)
 
     if mean is not None and std is not None:
-        norm = T.Normalize(mean=mean, std=std)
-        x = norm(x)
+        x = T.Normalize(mean=mean, std=std)(x)
 
     x = x * 2.0 - 1.0
-    x = x.unsqueeze(0).to(device)
-    return x
+    return x.unsqueeze(0).to(device)
+
 
 def model_output_to_bgr_uint8(y):
     y = y.squeeze(0).detach().cpu()
@@ -128,112 +96,123 @@ def model_output_to_bgr_uint8(y):
     y = (y.permute(1, 2, 0).numpy() * 255).astype(np.uint8)
     return cv2.cvtColor(y, cv2.COLOR_RGB2BGR)
 
-# =========================
-# Model loading
-# =========================
-def load_generator(device):
+
+def load_generator(weights_path, device):
     gen = UNetGenerator()
-    sd = torch.load(GENERATOR_WEIGHTS, map_location=device)
+    sd = torch.load(weights_path, map_location=device)
     gen.load_state_dict(sd)
     gen.to(device)
     gen.eval()
     return gen
 
-# =========================
-# Core required function
-# =========================
-def generate_chessboard_image(fen: str, view: str, angle: str = "overhead") -> None:
-    """
-    view:  'white' or 'black'
-    angle: 'overhead' or 'east' or 'west'
-    """
-    os.makedirs(RENDERS_DIR, exist_ok=True)
-    os.makedirs(RESULTS_DIR, exist_ok=True)
 
-    if angle not in {"overhead", "east", "west"}:
-        raise ValueError("angle must be one of: overhead/east/west")
-    if view not in {"white", "black"}:
-        raise ValueError("view must be one of: white/black")
+def read_image_bgr(path):
+    data = np.fromfile(path, dtype=np.uint8)
+    return cv2.imdecode(data, cv2.IMREAD_COLOR)
 
-    # sanity checks
-    for p, name in [
-        (BLENDER_PATH, "BLENDER_PATH"),
-        (BLEND_FILE, "BLEND_FILE"),
-        (BLENDER_SCRIPT, "BLENDER_SCRIPT"),
-        (GENERATOR_WEIGHTS, "GENERATOR_WEIGHTS"),
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--fen", required=True)
+    p.add_argument("--view", choices=["white", "black"], required=True)
+    p.add_argument("--angle", choices=["overhead", "east", "west"], required=True)
+
+    p.add_argument("--blender_path", required=True)
+    p.add_argument("--blend_file", required=True)
+    p.add_argument("--generator_weights", required=True)
+
+    p.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
+
+    # keep your local render defaults
+    p.add_argument("--resolution", type=int, default=800)
+    p.add_argument("--samples", type=int, default=256)
+    p.add_argument("--supersample", type=int, default=200)
+    p.add_argument("--denoise", choices=["off", "on"], default="off")
+
+    args = p.parse_args()
+
+    renders_dir = os.path.join(BASE_DIR, "renders")
+    results_dir = os.path.join(BASE_DIR, "results")
+    os.makedirs(renders_dir, exist_ok=True)
+    os.makedirs(results_dir, exist_ok=True)
+
+    blender_script = os.path.join(BASE_DIR, "chess_position_api_v2_sharp.py")
+    synthetic_raw = os.path.join(renders_dir, "synthetic_raw.png")
+
+    # IMPORTANT: delete stale image so you can't accidentally reuse old renders
+    if os.path.exists(synthetic_raw):
+        os.remove(synthetic_raw)
+
+    # Norm json path next to weights by convention
+    norm_json = os.path.splitext(args.generator_weights)[0] + ".norm.json"
+
+    for path, name in [
+        (args.blend_file, "blend_file"),
+        (blender_script, "blender_script"),
+        (args.generator_weights, "generator_weights"),
     ]:
-        if not os.path.exists(p):
-            raise FileNotFoundError(f"{name} not found: {p}")
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"{name} not found: {path}")
 
-    # -------------------------
-    # 1. Run Blender (synthetic)
-    # -------------------------
+    # 1) Blender
     blender_cmd = [
-        BLENDER_PATH,
-        BLEND_FILE,
+        args.blender_path,
+        args.blend_file,
         "--background",
-        "--python", BLENDER_SCRIPT,
+        "--python", blender_script,
         "--",
-        "--fen", fen,
-        "--view", view,
-        "--out_dir", RENDERS_DIR,
-        "--resolution", "800",
-        "--samples", "256",
-        "--supersample", "200",
-        "--denoise", "off",
-        "--angle", angle,
+        "--fen", args.fen,
+        "--view", args.view,
+        "--out_dir", renders_dir,
+        "--resolution", str(args.resolution),
+        "--samples", str(args.samples),
+        "--supersample", str(args.supersample),
+        "--denoise", args.denoise,
+        "--angle", args.angle,
         "--also_overhead", "off",
     ]
     subprocess.run(blender_cmd, check=True, cwd=BASE_DIR)
 
-    # -------------------------
-    # 2. Load & preprocess synthetic image
-    # -------------------------
-    if not os.path.exists(SYNTHETIC_RAW):
+    if not os.path.exists(synthetic_raw):
         raise RuntimeError("Blender did not produce synthetic_raw.png")
 
-    raw = cv2.imdecode(np.fromfile(SYNTHETIC_RAW, dtype=np.uint8), cv2.IMREAD_COLOR)
+    # 2) preprocess
+    raw = read_image_bgr(synthetic_raw)
     cropped_rgb = preprocess_chess_board_training_style(raw, output_size=512)
-
     if cropped_rgb is None:
         cropped_rgb = cv2.cvtColor(
             cv2.resize(raw, (512, 512), interpolation=cv2.INTER_AREA),
             cv2.COLOR_BGR2RGB,
         )
 
-    synthetic_path = os.path.join(RESULTS_DIR, "synthetic.png")
-    cv2.imwrite(synthetic_path, cv2.cvtColor(cropped_rgb, cv2.COLOR_RGB2BGR))
+    cv2.imwrite(os.path.join(results_dir, "synthetic.png"), cv2.cvtColor(cropped_rgb, cv2.COLOR_RGB2BGR))
 
-    # -------------------------
-    # 3. Generator inference
-    # -------------------------
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    gen = load_generator(device)
+    # 3) inference
+    if args.device == "cpu":
+        device = torch.device("cpu")
+    elif args.device == "cuda":
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    mean, std = load_norm_stats()
+    gen = load_generator(args.generator_weights, device)
+    mean, std = load_norm_stats(norm_json)
     x = img_rgb_to_model_input(cropped_rgb, device=device, mean=mean, std=std)
 
     with torch.no_grad():
         fake = gen(x)
 
     fake_bgr = model_output_to_bgr_uint8(fake)
+    cv2.imwrite(os.path.join(results_dir, "realistic.png"), fake_bgr)
 
-    realistic_path = os.path.join(RESULTS_DIR, "realistic.png")
-    cv2.imwrite(realistic_path, fake_bgr)
+    side = np.hstack([cv2.cvtColor(cropped_rgb, cv2.COLOR_RGB2BGR), fake_bgr])
+    cv2.imwrite(os.path.join(results_dir, "side_by_side.png"), side)
 
-    # -------------------------
-    # 4. Side-by-side
-    # -------------------------
-    syn_bgr = cv2.cvtColor(cropped_rgb, cv2.COLOR_RGB2BGR)
-    side_by_side = np.hstack([syn_bgr, fake_bgr])
-    side_path = os.path.join(RESULTS_DIR, "side_by_side.png")
-    cv2.imwrite(side_path, side_by_side)
+    print("Results saved to:")
+    print(" -", os.path.join(results_dir, "synthetic.png"))
+    print(" -", os.path.join(results_dir, "realistic.png"))
+    print(" -", os.path.join(results_dir, "side_by_side.png"))
 
-    print("Results saved to ./results/")
-    print(f" - {synthetic_path}")
-    print(f" - {realistic_path}")
-    print(f" - {side_path}")
 
 if __name__ == "__main__":
-    test_fen = "8/p4p2/7p/2kp2p1/P5P1/2K1P3/5P1P/8"
-    generate_chessboard_image(test_fen, view="white", angle="west")
+    main()
