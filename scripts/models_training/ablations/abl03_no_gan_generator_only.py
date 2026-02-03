@@ -21,6 +21,24 @@ import torch.nn.functional as F
 import torchvision.models as models
 from torch.utils.data import Dataset, DataLoader
 
+import argparse
+
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+DEFAULT_DATASET_ROOT = os.path.join(BASE_DIR, "dataset_root")
+DEFAULT_OUT_ROOT = os.path.join(BASE_DIR, "final_models")
+DEFAULT_TEST_SYNTH_DIR = os.path.join(BASE_DIR, "generate", "synth_for_test")
+
+ap = argparse.ArgumentParser(description="Ablation 03: No GAN, generator only.")
+ap.add_argument("--dataset_root", type=str, default=DEFAULT_DATASET_ROOT)
+ap.add_argument("--out_root", type=str, default=DEFAULT_OUT_ROOT)
+ap.add_argument("--test_synth_dir", type=str, default=DEFAULT_TEST_SYNTH_DIR)
+args = ap.parse_args()
+
+dataset_root = args.dataset_root
+out_root = args.out_root
+test_synth_dir = args.test_synth_dir
+os.makedirs(out_root, exist_ok=True)
+
 
 # -----------------------------
 # Helpers
@@ -169,7 +187,7 @@ def run_test_folder_inference(
 class DatasetRootFENDataset(Dataset):
     IMAGE_EXTS = (".png", ".jpg", ".jpeg")
 
-    def __init__(self, dataset_root="/home/guykou/chess/dataset_root", images_subdir="images",
+    def __init__(self, dataset_root=dataset_root, images_subdir="images",
                  hands_fens_file="fens_with_hands_in_dataset_root.txt", require_synth=True, verbose=True):
         self.dataset_root = Path(dataset_root)
         self.images_dir = self.dataset_root / images_subdir
@@ -351,8 +369,8 @@ def save_run_config(logs_dir: Path, config: dict):
 def main():
     ap = argparse.ArgumentParser(description="Ablation 03: NO GAN (G-only regression: L1 + VGG).")
 
-    ap.add_argument("--dataset_root", type=str, default="/home/guykou/chess/dataset_root")
-    ap.add_argument("--out_root", type=str, default="/home/guykou/chess/final_models")
+    ap.add_argument("--dataset_root", type=str, default=dataset_root)
+    ap.add_argument("--out_root", type=str, default=out_root)
     ap.add_argument("--run_id", type=int, default=0)
     ap.add_argument("--tag", type=str, default="abl03_no_gan")
     ap.add_argument("--seed", type=int, default=0)
@@ -374,7 +392,7 @@ def main():
     ap.add_argument("--syn_norm", type=str, default="tanh", choices=["tanh","center","none","imagenet"])
     ap.add_argument("--real_norm", type=str, default="tanh", choices=["tanh","center","none","imagenet"])
 
-    ap.add_argument("--test_synth_dir", type=str, default="/home/guykou/chess/generate/synth_for_test")
+    ap.add_argument("--test_synth_dir", type=str, default=test_synth_dir)
     ap.add_argument("--test_max_images", type=int, default=0)
     ap.add_argument("--no_test_side_by_side", action="store_true", default=False)
 

@@ -1,6 +1,7 @@
 python synth_to_real_chess4_dataset_root_interactive.py \
-  --dataset_root /home/guykou/chess/dataset_root \
-  --out_root /home/guykou/chess/final_models \
+  --dataset_root ../dataset_root \
+  --out_root ../final_models \
+  --test_synth_dir ../generate/synth_for_test \
   --run_id 10 \
   --tag 10_BCE_adv_weakerD \
   --image_size 512 \

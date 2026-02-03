@@ -1,0 +1,10 @@
+numpy
+opencv-python
+pillow
+matplotlib
+tqdm
+torch
+torchvision
+python-chess
+scikit-image
+mediapipe

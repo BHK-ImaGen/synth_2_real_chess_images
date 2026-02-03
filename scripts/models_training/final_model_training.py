@@ -1,17 +1,3 @@
-#!/usr/bin/env python3
-# synth_to_real_chess4_dataset_root_interactive.py
-#
-# Changes vs original:
-# 1) No train/val split: train on the whole dataset.
-# 2) Interactive args for hyperparams, normalization modes, discriminator strength, losses, etc.
-# 3) After each checkpoint save (every save_every epochs), run inference on:
-#      /home/guykou/chess/generate/synth_for_test
-#    and save outputs under viz/test_epoch_XXX/.
-#
-# Keeps dataset_root structure + excludes hands FEN folders:
-#   /home/guykou/chess/dataset_root/images/<fen_folder>/synth.png
-#   /home/guykou/chess/dataset_root/images/<fen_folder>/real/*.png|jpg|jpeg
-
 import os
 import re
 import csv
@@ -30,6 +16,22 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models as models
 from torch.utils.data import Dataset, DataLoader
+
+import argparse
+
+DEFAULT_DATASET_ROOT = os.path.join(os.path.dirname(__file__), "..", "dataset_root")
+DEFAULT_OUT_ROOT = os.path.join(os.path.dirname(__file__), "..", "final_models")
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+DEFAULT_TEST_SYNTH_DIR = os.path.join(BASE_DIR, "generate", "synth_for_test")
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--dataset_root", type=str, default=DEFAULT_DATASET_ROOT)
+parser.add_argument("--out_root", type=str, default=DEFAULT_OUT_ROOT)
+args = parser.parse_args()
+
+dataset_root = args.dataset_root
+out_root = args.out_root
+os.makedirs(out_root, exist_ok=True)
 
 # -----------------------------
 # 0) Utilities
@@ -68,7 +70,7 @@ class DatasetRootFENDataset(Dataset):
 
     def __init__(
         self,
-        dataset_root="/home/guykou/chess/dataset_root",
+        dataset_root=args.dataset_root,
         images_subdir="images",
         hands_fens_file="fens_with_hands_in_dataset_root.txt",
         require_synth=True,
@@ -706,7 +708,7 @@ def build_argparser():
     p = argparse.ArgumentParser(description="Pix2Pix synth->real training on dataset_root with interactive knobs.")
 
     # data
-    p.add_argument("--dataset_root", type=str, default="/home/guykou/chess/dataset_root")
+    p.add_argument("--dataset_root", type=str, default=dataset_root)
     p.add_argument("--image_size", type=int, default=512)
     p.add_argument("--batch_size", type=int, default=8)
     p.add_argument("--num_workers", type=int, default=2)
@@ -736,13 +738,13 @@ def build_argparser():
 
     # checkpointing + test viz
     p.add_argument("--save_every", type=int, default=10)
-    p.add_argument("--test_synth_dir", type=str, default="/home/guykou/chess/generate/synth_for_test")
+    p.add_argument("--test_synth_dir", type=str, default=DEFAULT_TEST_SYNTH_DIR)
     p.add_argument("--test_max_images", type=int, default=0)  # 0 => unlimited
     p.add_argument("--test_side_by_side", action="store_true", default=True)
     p.add_argument("--no_test_side_by_side", action="store_true", default=False)
 
     # run naming
-    p.add_argument("--out_root", type=str, default="/home/guykou/chess/final_models")
+    p.add_argument("--out_root", type=str, default=out_root)
     p.add_argument("--run_id", type=int, default=0)
     p.add_argument("--tag", type=str, default="default")
 

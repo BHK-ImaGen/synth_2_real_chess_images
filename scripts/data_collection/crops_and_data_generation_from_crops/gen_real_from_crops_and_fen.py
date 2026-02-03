@@ -10,18 +10,31 @@ try:
 except Exception:
     _HAVE_CHESS = False
 
+import argparse
+
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+DEFAULT_FENS_DIR = os.path.join(BASE_DIR, "dataset_root", "fens")
+DEFAULT_OUT_DIR = os.path.join(BASE_DIR, "real_from_crop_data")
+DEFAULT_CROPS_DIR = os.path.join(BASE_DIR, "dataset_root", "crops", "overhead")
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--fens_dir", type=str, default=DEFAULT_FENS_DIR)
+parser.add_argument("--skip_files", type=list, default=[
+    os.path.join(DEFAULT_FENS_DIR, "all_original_fens.txt"),
+    os.path.join(DEFAULT_FENS_DIR, "new_fens_randomPlaced_n20000_seed0.txt"),
+])
+parser.add_argument("--out_dir", type=str, default=DEFAULT_OUT_DIR)
+parser.add_argument("--crops_dir", type=str, default=DEFAULT_CROPS_DIR)
+args = parser.parse_args()
+
 
 # -----------------------------
 # CONFIG (dataset generation)
 # -----------------------------
-FENS_DIR = "/home/guykou/chess/old_datasets/fens"
-SKIP_FILE = [
-    "/home/guykou/chess/old_datasets/fens/all_original_fens.txt",
-    "/home/guykou/chess/old_datasets/fens/new_fens_randomPlaced_n20000_seed0_20260116_011216.txt",
-]
-OUT_DIR = "/home/guykou/chess/real_from_crop_data2"
-
-CROPS_DIR = "/home/guykou/chess/old_datasets/crops/overhead"
+FENS_DIR = args.fens_dir
+SKIP_FILE = args.skip_files
+OUT_DIR = args.out_dir
+CROPS_DIR = args.crops_dir
 IMG_SIZE = 512
 
 # If True: skip generating if output image already exists
@@ -133,7 +146,7 @@ def fen_to_safe_filename(fen: str, max_len: int = 200) -> str:
 # -----------------------------
 def fen_to_overhead_real_image(
     fen: str,
-    crops_dir: str = "/home/guykou/chess/crops/overhead",
+    crops_dir: str = CROPS_DIR,
     size: int = 512,
     visualize: bool = False,
     cache: dict = None,

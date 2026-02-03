@@ -24,6 +24,24 @@ import torch.nn.functional as F
 import torchvision.models as models
 from torch.utils.data import Dataset, DataLoader
 
+import argparse
+
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+DEFAULT_DATASET_ROOT = os.path.join(BASE_DIR, "dataset_root")
+DEFAULT_OUT_ROOT = os.path.join(BASE_DIR, "final_models")
+DEFAULT_TEST_SYNTH_DIR = os.path.join(BASE_DIR, "generate", "synth_for_test")
+
+ap = argparse.ArgumentParser(description="Ablation 02: NO L1 loss.")
+ap.add_argument("--dataset_root", type=str, default=DEFAULT_DATASET_ROOT)
+ap.add_argument("--out_root", type=str, default=DEFAULT_OUT_ROOT)
+ap.add_argument("--test_synth_dir", type=str, default=DEFAULT_TEST_SYNTH_DIR)
+args = ap.parse_args()
+
+dataset_root = args.dataset_root
+out_root = args.out_root
+test_synth_dir = args.test_synth_dir
+os.makedirs(out_root, exist_ok=True)
+
 
 # -----------------------------
 # Utils
@@ -114,7 +132,7 @@ class DatasetRootFENDataset(Dataset):
 
     def __init__(
         self,
-        dataset_root="/home/guykou/chess/dataset_root",
+        dataset_root=dataset_root,
         images_subdir="images",
         hands_fens_file="fens_with_hands_in_dataset_root.txt",
         require_synth=True,
@@ -397,8 +415,8 @@ def save_run_config(logs_dir: Path, config: dict):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--dataset_root", default="/home/guykou/chess/dataset_root")
-    ap.add_argument("--out_root", default="/home/guykou/chess/final_models")
+    ap.add_argument("--dataset_root", default=dataset_root)
+    ap.add_argument("--out_root", default=out_root)
     ap.add_argument("--run_id", type=int, default=0)
     ap.add_argument("--tag", type=str, default="abl02_no_l1")
     ap.add_argument("--seed", type=int, default=0)
@@ -423,7 +441,7 @@ def main():
     ap.add_argument("--disc_base_channels", type=int, default=32)
     ap.add_argument("--disc_layers", type=int, default=4)
 
-    ap.add_argument("--test_synth_dir", default="/home/guykou/chess/generate/synth_for_test")
+    ap.add_argument("--test_synth_dir", default=test_synth_dir)
 
     args = ap.parse_args()
     seed_everything(args.seed)

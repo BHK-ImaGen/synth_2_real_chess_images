@@ -8,19 +8,31 @@ import torchvision.transforms as T
 
 from generator import UNetGenerator
 
+import argparse
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--blender_path", type=str, default="blender")
+parser.add_argument("--blend_file", type=str, default=os.path.join(BASE_DIR, "chess-set.blend"))
+parser.add_argument("--generator_weights", type=str, default=os.path.join(BASE_DIR, "..", "models_training", "checkpoints", "gen_epoch_150.pth"))
+args = parser.parse_args()
+
 # =========================
 # CONFIG
 # =========================
-BLENDER_PATH = "/home/guykou/apps/blender-4.2.0-linux-x64/blender"
-BLEND_FILE = "/home/guykou/chess/chess-set.blend"
+BLENDER_PATH = args.blender_path
+BLEND_FILE = args.blend_file
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RENDERS_DIR = os.path.join(BASE_DIR, "renders")
 RESULTS_DIR = os.path.join(BASE_DIR, "results")
+os.makedirs(RENDERS_DIR, exist_ok=True)
+os.makedirs(RESULTS_DIR, exist_ok=True)
 
 BLENDER_SCRIPT = os.path.join(BASE_DIR, "chess_position_api_v2_sharp.py")
 
-GENERATOR_WEIGHTS = "/home/guykou/chess/final_models/run10_10_BCE_adv_weakerD_20260118_065207/checkpoints/gen_epoch_150.pth"
+GENERATOR_WEIGHTS = args.generator_weights
 SYNTHETIC_RAW = os.path.join(RENDERS_DIR, "synthetic_raw.png")
 
 NORM_STATS_JSON = os.path.splitext(GENERATOR_WEIGHTS)[0] + ".norm.json"
