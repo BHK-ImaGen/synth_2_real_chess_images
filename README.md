@@ -182,27 +182,94 @@ python scripts/models_training/final_model_training.py \
 
 ## Inference / Image Generation
 
-The inference pipeline:
-1. Render a synthetic board from a FEN using Blender
-2. Crop and normalize the board
-3. Translate the image using the trained generator
-4. Save outputs
+The inference pipeline performs the following steps:
 
-### Example
+1. Render a synthetic chessboard from a given FEN using Blender
+2. Automatically crop and perspective-correct the board
+3. Normalize the image using training statistics (if available)
+4. Translate the synthetic image to a realistic one using the trained GAN generator
+5. Save all outputs for inspection
+
+---
+
+### Example command (fully specified)
 
 ```bash
-python scripts/generate/generate.py
-```
-
-Outputs are saved to:
-```
-scripts/generate/results/
-├── synthetic.png
-├── realistic.png
-└── side_by_side.png
+python scripts/generate/generate.py \
+  --fen "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" \
+  --view white \
+  --angle east \
+  --blender_path /path/to/blender \
+  --blend_file /path/to/chess_scene.blend \
+  --generator_weights /path/to/generator.pth \
+  --device auto \
+  --resolution 800 \
+  --samples 256 \
+  --supersample 200 \
+  --denoise off
 ```
 
 ---
+
+### Output files
+
+Results are saved to:
+
+```
+scripts/generate/results/
+├── synthetic.png        # Cropped & normalized synthetic render
+├── realistic.png        # GAN-generated photorealistic image
+└── side_by_side.png     # Synthetic | Realistic comparison
+```
+
+The raw Blender render is saved temporarily to:
+
+```
+scripts/generate/renders/synthetic_raw.png
+```
+
+---
+
+### Command-line arguments
+
+| Argument              | Description                                          |
+| --------------------- | ---------------------------------------------------- |
+| `--fen`               | Chess position in FEN notation                       |
+| `--view`              | Board orientation: `white` or `black`                |
+| `--angle`             | Camera angle: `overhead`, `east`, or `west`          |
+| `--blender_path`      | Path to Blender executable                           |
+| `--blend_file`        | Path to the `.blend` file containing the chess scene |
+| `--generator_weights` | Trained generator `.pth` file                        |
+| `--device`            | `cpu`, `cuda`, or `auto`                             |
+| `--resolution`        | Base render resolution (default: 800)                |
+| `--samples`           | Cycles samples per pixel (default: 256)              |
+| `--supersample`       | Render resolution scale percentage (default: 200)    |
+| `--denoise`           | `on` or `off` (Cycles denoising)                     |
+
+---
+
+### Normalization behavior
+
+If a file named:
+
+```
+<generator_weights>.norm.json
+```
+
+exists next to the generator checkpoint, it is automatically loaded and used to apply the same mean/std normalization as during training.
+If not found, inference proceeds without normalization and a warning is printed.
+
+---
+
+### Notes
+
+* Blender is required only for inference, not for training.
+* CUDA is recommended but optional.
+* Stale renders are deleted automatically to avoid accidental reuse.
+* Board detection and perspective correction exactly match the training preprocessing.
+
+---
+
 
 ## Reproducibility
 
